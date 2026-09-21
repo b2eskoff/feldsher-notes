@@ -10,17 +10,18 @@ internal data class MedicineForm(val label: String, val brands: List<String>)
 
 /** An immutable derived index, physically separate from personal records. */
 internal class MedicineRepository(context: Context) {
+    companion object { private val installLock=Any() }
     private val app = context.applicationContext
     private val file = File(app.noBackupFilesDir, "reference/medicines_v1.db")
     private var ready = false
     private fun valid(f: File): Boolean = runCatching {
         SQLiteDatabase.openDatabase(f.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-            val version = db.rawQuery("SELECT value FROM meta WHERE key='version'", null).use { it.moveToFirst() && it.getString(0) == "1" }
+            val version = db.rawQuery("SELECT value FROM meta WHERE key='version'", null).use { it.moveToFirst() && it.getString(0) == "2" }
             val count = db.rawQuery("SELECT COUNT(*) FROM medicines", null).use { it.moveToFirst() && it.getInt(0) > 1000 }
             version && count
         }
     }.getOrDefault(false)
-    @Synchronized private fun connect(): SQLiteDatabase {
+    @Synchronized private fun connect(): SQLiteDatabase = synchronized(installLock) {
         if (!ready) {
             if (!file.isFile || !valid(file)) {
                 file.parentFile?.mkdirs()
@@ -33,7 +34,7 @@ internal class MedicineRepository(context: Context) {
             }
             ready = true
         }
-        return SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
     }
     private fun strings(raw: String): List<String> = JSONArray(raw).let { a -> List(a.length()) { a.getString(it) } }
     private fun row(c: Cursor): ReferenceItem {
@@ -50,7 +51,7 @@ internal class MedicineRepository(context: Context) {
             sourceUrl=guide?.url ?: "https://grls.minzdrav.gov.ru/grls.aspx", checkedOn=if(guide != null) "21.09.2026" else "18.09.2026",
             medicineForms=forms, clinical=guide != null)
     }
-    @Synchronized fun search(raw: String, limit: Int = 40): List<ReferenceItem> {
+    @Synchronized fun search(raw: String, limit: Int = 40, includeCombinations: Boolean = false): List<ReferenceItem> {
         val q = ReferenceSearch.normalize(raw)
         if(q.length < 2) return emptyList()
         val mapped = ClinicalGuides.aliasInn(q) ?: VerifiedLatin.russianInnForSearch(raw)
@@ -60,14 +61,21 @@ internal class MedicineRepository(context: Context) {
         val extra = if(mapped != null) " OR title_search=?" else ""
         if(mapped != null) args.add(ReferenceSearch.normalize(mapped))
         args.addAll(listOf(q, ReferenceSearch.normalize(mapped.orEmpty()), "$q%", "%$q%"))
-        return connect().use { db -> db.rawQuery("""SELECT * FROM medicines WHERE ($where)$extra
+        val found=connect().use { db -> db.rawQuery("""SELECT * FROM medicines WHERE ($where)$extra
             ORDER BY CASE WHEN title_search=? THEN 0 WHEN title_search=? THEN 1 WHEN title_search LIKE ? THEN 2 WHEN search LIKE ? THEN 3 ELSE 4 END,
-            length(title), title LIMIT ${limit.coerceIn(1,120)}""", args.toTypedArray()).use { c -> buildList { while(c.moveToNext()) add(row(c)) } } }
+            ingredient_count, length(title), title LIMIT 200""", args.toTypedArray()).use { c -> buildList { while(c.moveToNext()) add(row(c)) } } }
+        val hasSingle=found.any { '+' !in it.inn }
+        return found.filter { item ->
+            includeCombinations || '+' in raw || '+' !in item.inn || item.tradeNames.any { brand ->
+                val b=ReferenceSearch.normalize(brand)
+                b==q || (!hasSingle && '+' !in brand && b.startsWith(q))
+            }
+        }.take(limit.coerceIn(1,120))
     }
     @Synchronized fun item(id: String): ReferenceItem? = connect().use { db ->
         val legacy = id.removePrefix("drug-grls-").toLongOrNull()
-        val sql = if(legacy != null) "SELECT * FROM medicines WHERE id=(SELECT medicine_id FROM legacy WHERE id=?)" else "SELECT * FROM medicines WHERE id=?"
-        db.rawQuery(sql,arrayOf(legacy?.toString() ?: id)).use { if(it.moveToFirst()) row(it) else null }
+        val sql = if(legacy != null) "SELECT * FROM medicines WHERE id=(SELECT medicine_id FROM legacy WHERE id=?)" else "SELECT * FROM medicines WHERE id=COALESCE((SELECT medicine_id FROM redirects WHERE id=?),?)"
+        db.rawQuery(sql,if(legacy!=null) arrayOf(legacy.toString()) else arrayOf(id,id)).use { if(it.moveToFirst()) row(it) else null }
     }
     fun favorites(ids: Set<String>) = ids.filter { it.startsWith("med-") || it.startsWith("drug-grls-") }.mapNotNull { item(it) }.distinctBy { it.id }
     @Synchronized fun quick(): List<ReferenceItem> = connect().use { db ->

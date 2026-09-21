@@ -6,6 +6,17 @@ import org.json.JSONObject
 /** Offsets refer to the visible UTF-16 text. Plain text stays readable in TXT backups. */
 data class ReferenceLink(val start: Int, val end: Int, val label: String, val target: String)
 object ReferenceLinks {
+    /** A diagnosis is a whole clause. ! explicitly starts a new query and is replaced on selection. */
+    fun diagnosisCandidate(text: String, cursor: Int, links: List<ReferenceLink>): Pair<Int,String>? {
+        if(cursor !in 0..text.length || links.any { cursor>it.start && cursor<=it.end }) return null
+        val prefix=text.take(cursor)
+        val boundary=maxOf(prefix.indexOfLast { it=='\n' || it==';' || it==':' }+1,
+            links.filter { it.end<=cursor }.maxOfOrNull { it.end } ?: 0)
+        val marker=prefix.lastIndexOf('!').takeIf { it>=boundary }
+        val start=marker ?: (boundary+prefix.substring(boundary).indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0))
+        val term=prefix.substring(if(marker!=null) start+1 else start).trim()
+        return if(term.length>=2) start to term else null
+    }
     fun decode(raw: String, text: String): List<ReferenceLink> = runCatching {
         val a=JSONArray(raw.ifBlank { "[]" })
         List(a.length()) { i -> a.getJSONObject(i).let { ReferenceLink(it.getInt("start"),it.getInt("end"),it.getString("label"),it.getString("target")) } }

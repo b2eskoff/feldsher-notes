@@ -1,6 +1,8 @@
 package ru.ainur.feldshernotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,26 +68,30 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
     var referenceId by rememberSaveable {mutableStateOf("")}
     var linksMenu by remember {mutableStateOf(false)}
     var failed by remember {mutableStateOf(false)}
+    var searched by remember {mutableStateOf(false)}
+    var shown by remember {mutableIntStateOf(if(compact) 3 else 5)}
+    var combinations by rememberSaveable {mutableStateOf(false)}
     val links=remember(block.value("text"),block.value("references")) {ReferenceLinks.decode(block.value("references"),block.value("text"))}
     LaunchedEffect(block.value("text")) {
         if(field.text!=block.value("text")) field=TextFieldValue(block.value("text"),TextRange(field.selection.end.coerceAtMost(block.value("text").length)))
     }
-    LaunchedEffect(field.text,field.selection,focused) {
-        suggestions=emptyList();failed=false
+    LaunchedEffect(field.text,field.selection,focused,combinations) {
+        suggestions=emptyList();failed=false;searched=false;shown=if(compact) 3 else 5
         if(!focused || !field.selection.collapsed || !enabled) return@LaunchedEffect
         val snapshot=field.text;val cursor=field.selection.end
-        val candidates=ReferenceLinks.candidates(snapshot,cursor,links)
+        val candidates=if(block.kind==BlockKind.DIAGNOSIS) listOfNotNull(ReferenceLinks.diagnosisCandidate(snapshot,cursor,links)) else ReferenceLinks.candidates(snapshot,cursor,links)
         if(candidates.isEmpty()) return@LaunchedEffect
         delay(180)
         try {
             suggestions=withContext(Dispatchers.IO) {
                 var found=emptyList<Suggestion>()
                 for((start,term) in candidates) {
-                    val hits=if(block.kind==BlockKind.DIAGNOSIS) icd.search(term,12) else medicines.search(term,8)
+                    val hits=if(block.kind==BlockKind.DIAGNOSIS) icd.search(term,120,terminalOnly=true) else medicines.search(term,40,includeCombinations=combinations)
                     if(hits.isNotEmpty()) {found=hits.map {Suggestion(it,start,cursor,snapshot)};break}
                 }
                 found
             }
+            searched=true
         } catch(e: CancellationException) {throw e}
         catch(_: Exception) {failed=true}
     }
@@ -111,7 +117,7 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
                 focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent,disabledIndicatorColor=Color.Transparent))
         if(suggestions.isNotEmpty() && focused) Column(Modifier.fillMaxWidth().padding(horizontal=5.dp).background(Tint,RoundedCornerShape(16.dp)).padding(6.dp)) {
             Text(if(block.kind==BlockKind.DIAGNOSIS) "Выбери подходящую формулировку" else "Добавить из справочника",color=Muted,fontSize=11.sp,modifier=Modifier.padding(8.dp))
-            suggestions.take(if(compact) 3 else 5).forEach { s ->
+            suggestions.take(shown).forEach { s ->
                 Surface(onClick={if(s.item.kind==ReferenceKind.ICD) insert(s,"${s.item.title} [${s.item.code}]") else selected=s},color=Color.Transparent,shape=RoundedCornerShape(12.dp)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal=9.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically) {
                         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
@@ -122,7 +128,15 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
                     }
                 }
             }
+            if(suggestions.size>shown) TextButton({shown+=if(compact) 3 else 5}) {Text("Ещё варианты (${suggestions.size-shown})")}
             Text("Можно продолжить писать без выбора.",fontSize=11.sp,color=Muted,modifier=Modifier.padding(8.dp))
+        }
+        if(focused && block.kind==BlockKind.DIAGNOSIS) Text(
+            if(searched && suggestions.isEmpty()) "По всей фразе совпадений нет. Уточни слова или оставь свой диагноз."
+            else "Ищу по всей фразе. ! начинает новый запрос; выбор вставит точный код.",
+            color=Muted,fontSize=11.sp,modifier=Modifier.padding(horizontal=12.dp,vertical=5.dp))
+        if(focused && block.kind==BlockKind.MEDICINES) TextButton({combinations=!combinations}) {
+            Text(if(combinations) "Скрыть комбинированные препараты" else "Показать комбинированные препараты",fontSize=11.sp)
         }
         if(failed) Text("Подсказки пока недоступны. Текст можно сохранить как обычно.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(12.dp))
         if(links.isNotEmpty()) Box {
@@ -139,8 +153,10 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
 @Composable private fun MedicineFormPicker(item: ReferenceItem,compact: Boolean,onDismiss: ()->Unit,onReference: ()->Unit,onSelect: (String)->Unit) {
     var query by rememberSaveable {mutableStateOf("")}
     var latin by rememberSaveable {mutableStateOf(false)}
-    val forms=remember(item,query) {val terms=ReferenceSearch.normalize(query).split(' ').filter(String::isNotBlank)
-        item.medicineForms.filter { f ->val text=ReferenceSearch.normalize(f.label+" "+f.brands.joinToString(" "));terms.all(text::contains)} }
+    val categories=remember(item) {item.medicineForms.map {formCategory(it.label)}.distinct()}
+    var category by rememberSaveable {mutableStateOf(if("Инъекции" in categories) "Инъекции" else "Все")}
+    val forms=remember(item,query,category) {val terms=ReferenceSearch.normalize(query).split(' ').filter(String::isNotBlank)
+        item.medicineForms.filter { f ->val text=ReferenceSearch.normalize(f.label+" "+f.brands.joinToString(" "));terms.all(text::contains) && (query.isNotBlank() || category=="Все" || formCategory(f.label)==category)} }
     Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
         Column(Modifier.fillMaxSize().background(Paper).safeDrawingPadding().imePadding()) {
             PageHeader("Выбрать форму",compact,onDismiss)
@@ -150,6 +166,9 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
                     Checkbox(latin,{latin=it});Text("Вставлять латинское название",fontSize=13.sp)
                 }
                 OutlinedTextField(query,{query=it},singleLine=true,placeholder={Text("Концентрация, объём или название…")},modifier=Modifier.fillMaxWidth().testTag("formSearch"),shape=RoundedCornerShape(16.dp))
+                if(categories.size>1 && query.isBlank()) Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    (listOf("Все")+categories).forEach { c ->FilterChip(category==c,{category=c},label={Text(c,fontSize=12.sp)}) }
+                }
                 Text("Выбери имеющуюся форму. Фактически введённый объём можно дописать в записи.",color=Muted,fontSize=12.sp)
                 Row {TextButton(onReference) {Text("Открыть справку")};TextButton({onSelect(if(latin && item.latin.isNotBlank()) item.latin else item.title)}) {Text("Только название")}}
             }
@@ -166,6 +185,11 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
             }
         }
     }
+}
+private fun formCategory(label: String): String = when {
+    listOf("внутривен","внутримыш","инъекц","инфуз").any(label::contains) -> "Инъекции"
+    listOf("таблет","капсул").any(label::contains) -> "Таблетки и капсулы"
+    else -> "Другие формы"
 }
 internal fun medicineInsertion(item: ReferenceItem,form: MedicineForm,latin: Boolean): String {
     val name=if(latin && item.latin.isNotBlank()) item.latin else item.title

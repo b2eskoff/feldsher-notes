@@ -47,6 +47,8 @@ import kotlinx.coroutines.withContext
     var children by remember { mutableStateOf(emptyList<ReferenceItem>()) }
     var loading by remember { mutableStateOf(false) };var error by remember { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) };var limit by remember { mutableIntStateOf(40) }
+    var combinations by rememberSaveable {mutableStateOf(false)}
+    var favoritesReady by remember {mutableStateOf(false)}
     val list=rememberLazyListState()
     fun back() { if(history.isNotEmpty()) { openedId=history.last();history=history.dropLast(1) } else if(openedId.isNotEmpty() && initialId.isEmpty()) openedId="" else onBack() }
     BackHandler { back() }
@@ -63,9 +65,22 @@ import kotlinx.coroutines.withContext
     suspend fun resolve(id: String): ReferenceItem? = withContext(Dispatchers.IO) {
         if(id.startsWith("icd-nsi-")) icd.item(id) else medicines.item(id) ?: ReferenceCatalog.items.firstOrNull { it.id==id }
     }
+    LaunchedEffect(Unit) {
+        try {
+            val migrated=withContext(Dispatchers.IO) {
+                fun canonical(id: String)=if(id.startsWith("med-") || id.startsWith("drug-grls-")) medicines.item(id)?.id ?: id else id
+                favorites.map(::canonical).toSet() to recent.map(::canonical).distinct()
+            }
+            favorites=migrated.first;recent=migrated.second
+            prefs.edit().putStringSet("ids",favorites).putString("recent",recent.joinToString("|")).apply()
+        } catch(e: CancellationException) {throw e}
+        catch(_: Exception) { /* Keep the original bookmarks if the reference cannot open. */ }
+        finally {favoritesReady=true}
+    }
     LaunchedEffect(query,tab) { limit=40;list.scrollToItem(0) }
-    LaunchedEffect(query,tab,openedId,favorites,retry,limit) {
+    LaunchedEffect(query,tab,openedId,favorites,retry,limit,combinations,favoritesReady) {
         loading=true;error=false;opened=null
+        if(!favoritesReady) return@LaunchedEffect
         try {
             if(openedId.isNotBlank()) {
                 opened=resolve(openedId)
@@ -80,7 +95,7 @@ import kotlinx.coroutines.withContext
                             .filter { query.isBlank() || ReferenceSearch.find(listOf(it),query).isNotEmpty() }
                         "Недавние" -> recent.mapNotNull { id -> if(id.startsWith("icd-nsi-")) icd.item(id) else medicines.item(id) }
                             .filter { query.isBlank() || ReferenceSearch.find(listOf(it),query).isNotEmpty() }
-                        else -> if(query.isBlank()) medicines.quick() else medicines.search(query,limit)
+                        else -> if(query.isBlank()) medicines.quick() else medicines.search(query,limit,includeCombinations=combinations)
                     }
                 }
             }
@@ -100,6 +115,7 @@ import kotlinx.coroutines.withContext
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
                 listOf("Препараты","МКБ-10","Избранное","Недавние").forEach { label -> FilterChip(tab==label,{tab=label},label={Text(label)}) }
             }
+            if(tab=="Препараты" && query.isNotBlank()) FilterChip(combinations,{combinations=!combinations},label={Text("Комбинированные препараты",fontSize=12.sp)})
             Text(if(query.isBlank()) when(tab) { "Препараты" -> "Часто нужны · всё доступно без интернета";"МКБ-10" -> "Все разделы классификатора";else -> "Карточки на устройстве" } else "Результаты поиска",color=Muted,fontSize=12.sp,modifier=Modifier.padding(bottom=6.dp))
         }
         if(loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Accent)
@@ -134,7 +150,9 @@ import kotlinx.coroutines.withContext
         Row(Modifier.padding(start=if(compact) 13.dp else 17.dp,top=12.dp,bottom=12.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                 if(item.kind==ReferenceKind.ICD) Text(item.code,color=Accent,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
-                Text(item.title,fontWeight=FontWeight.SemiBold,fontSize=if(compact) 15.sp else 17.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
+                val combination=item.kind==ReferenceKind.MEDICINE && '+' in item.inn
+                Text(if(combination) item.tradeNames.firstOrNull { '+' !in it } ?: item.title else item.title,fontWeight=FontWeight.SemiBold,fontSize=if(compact) 15.sp else 17.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
+                if(combination) Text(item.inn.replace("+"," + "),color=Muted,fontSize=12.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                 if(item.latin.isNotBlank()) Text(item.latin,color=Accent,fontSize=12.sp)
                 if(item.kind==ReferenceKind.MEDICINE) {
                     Text(item.tradeNames.filterNot { it.equals(item.title,true) }.take(5).joinToString(" · ").ifBlank { item.description },color=Muted,fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)

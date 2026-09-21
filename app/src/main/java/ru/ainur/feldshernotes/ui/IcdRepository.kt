@@ -11,6 +11,11 @@ import java.io.File
  * Codes/titles are NOT clinical guidelines or automated diagnosis suggestions.
  */
 internal class IcdRepository(context: Context) {
+    private data class Entry(val item: ReferenceItem,val leaf: Boolean,val title: String,val aliases: String,val words: List<String>)
+    companion object {
+        private val installLock=Any()
+        @Volatile private var index: List<Entry>?=null
+    }
     private val app = context.applicationContext
     private val databaseFile = File(app.noBackupFilesDir, "reference/icd10_ru_2_27.db")
     private val sourceAsset = "reference/icd10_ru_2_27.db"
@@ -19,7 +24,7 @@ internal class IcdRepository(context: Context) {
     private val acceptedVersion = "2.27"
 
     private var ready = false
-    @Synchronized private fun connect(): SQLiteDatabase {
+    @Synchronized private fun connect(): SQLiteDatabase = synchronized(installLock) {
         if (!ready && (!databaseFile.isFile || !verify(databaseFile))) {
             databaseFile.parentFile?.mkdirs()
             val temp = File(databaseFile.parentFile, "icd10_ru_2_27.db.tmp")
@@ -30,7 +35,7 @@ internal class IcdRepository(context: Context) {
             } finally { temp.delete() }
         }
         ready = true
-        return SQLiteDatabase.openDatabase(databaseFile.path, null, SQLiteDatabase.OPEN_READONLY)
+        SQLiteDatabase.openDatabase(databaseFile.path, null, SQLiteDatabase.OPEN_READONLY)
     }
     private fun verify(file: File): Boolean = try {
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
@@ -53,30 +58,36 @@ internal class IcdRepository(context: Context) {
     private fun rows(db: SQLiteDatabase, sql: String, params: Array<String> = emptyArray()): List<ReferenceItem> =
         db.rawQuery(sql, params).use { c -> buildList { while (c.moveToNext()) add(cursorToItem(c)) } }
 
-    /** Only first 120 hits are returned; 15,038 records are never composed as a single list. */
-    @Synchronized fun search(input: String, limit: Int = 120): List<ReferenceItem> {
-        val q = IcdQuery.normalize(input)
-        if (q.isBlank()) return emptyList()
-        val extraCodes = IcdQuery.relatedCodes(q)
-        val extraSql = if(extraCodes.isEmpty()) "" else " OR (" + extraCodes.joinToString(" OR ") { "code = ? OR code LIKE ?" } + ")"
-        val escaped = q
-        val prefix = "$escaped%"
-        val anywhere = "%$escaped%"
-        val word = "% $escaped%"
-        return connect().use { db ->
-            rows(db, """
-                SELECT id, code, title FROM icd
-                WHERE active=1 AND (search_code LIKE ? OR search_title LIKE ? $extraSql)
-                ORDER BY CASE
-                  WHEN search_code = ? THEN 0
-                  WHEN search_title = ? THEN 1
-                  WHEN search_code LIKE ? THEN 2
-                  WHEN search_title LIKE ? THEN 3
-                  WHEN search_title LIKE ? THEN 4
-                  ELSE 5 END, LENGTH(code), title
-                LIMIT ${limit.coerceIn(1, 200)}
-            """.trimIndent(), (listOf(anywhere, anywhere) + extraCodes.flatMap { listOf(it, "$it.%") } + listOf(q, q, prefix, prefix, word)).toTypedArray())
+    private fun entries(): List<Entry> = index ?: synchronized(installLock) {
+        index ?: connect().use { db ->
+            val parents=db.rawQuery("SELECT DISTINCT parent_id FROM icd WHERE active=1 AND parent_id IS NOT NULL",null).use { c -> buildSet {while(c.moveToNext()) add(c.getLong(0))} }
+            rows(db,"SELECT id,code,title FROM icd WHERE active=1").map { item ->
+                val alias=IcdLanguage.aliases(item.code)
+                Entry(item,item.id.removePrefix("icd-nsi-").toLong() !in parents,ReferenceSearch.normalize(item.title),ReferenceSearch.normalize(alias),IcdLanguage.words(item.title+" "+alias))
+            }.also { index=it }
         }
+    }
+    /** Whole-phrase matching. Editor callers exclude every node with active children. */
+    @Synchronized fun search(input: String, limit: Int = 120, terminalOnly: Boolean = false): List<ReferenceItem> {
+        val q = IcdQuery.normalize(input.trim().removePrefix("!"))
+        if (q.isBlank()) return emptyList()
+        val codeQuery=Regex("^[a-z][0-9].*").matches(q)
+        val words=IcdLanguage.words(q)
+        if(!codeQuery && words.isEmpty()) return emptyList()
+        return entries().asSequence().filter { !terminalOnly || it.leaf }.mapNotNull { e ->
+            val code=ReferenceSearch.normalize(e.item.code)
+            val score=when {
+                codeQuery -> if(code==q) 1000 else if(code.startsWith(q)) 800 else return@mapNotNull null
+                !IcdLanguage.matches(words,e.words) -> return@mapNotNull null
+                e.title==q -> 900
+                e.aliases.contains(q) -> 700
+                e.title.startsWith(q) -> 500
+                else -> 300
+            }
+            val common=if(e.item.code in setOf("I10","I11.9","G93.0","J18.9","E11.9","E10.9")) 30 else 0
+            e to (score+common+if(e.leaf) 10 else 0)
+        }.sortedWith(compareByDescending<Pair<Entry,Int>> {it.second}.thenBy {it.first.item.title.length}.thenBy {it.first.item.code})
+            .take(limit.coerceIn(1,200)).map {it.first.item}.toList()
     }
 
     @Synchronized fun chapters(): List<ReferenceItem> = connect().use { db ->

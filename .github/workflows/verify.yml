@@ -2,6 +2,7 @@ name: Verify app
 on:
   push:
     branches: [main]
+    paths: ['.verify-trigger']
   workflow_dispatch:
 permissions:
   contents: read
