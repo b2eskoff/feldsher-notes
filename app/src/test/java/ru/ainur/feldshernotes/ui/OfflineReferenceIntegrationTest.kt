@@ -26,7 +26,7 @@ class OfflineReferenceIntegrationTest {
         assertEquals("Метоклопрамид",repo.search("церукал").first().title)
         assertEquals(repo.search("церукал").first().id,repo.search("метоклопрамид").first().id)
         assertEquals("Бисопролол",repo.search("конкор").first {it.title=="Бисопролол"}.title)
-        assertTrue(repo.search("конкор").any { it.title.contains("+") || it.title.contains("Амлодипин") })
+        assertTrue(repo.search("конкор",includeCombinations=true).any { it.title.contains("+") || it.title.contains("Амлодипин") })
     }
     @Test fun salineCanBeFoundByColloquialPartialAndLatinNames() {
         val repo=MedicineRepository(context)

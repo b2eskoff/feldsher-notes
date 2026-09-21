@@ -35,4 +35,16 @@ class ReferenceEditorUiTest {
   compose.onNodeWithTag("diagnosisField").performTextInput("Моя формулировка вне МКБ")
   compose.runOnIdle {assertEquals("Моя формулировка вне МКБ",block.value("text"));assertTrue(ReferenceLinks.decode(block.value("references"),block.value("text")).isEmpty())}
  }
+ @Test fun bangQueryInsertsOfficialLeafAndPreservesPrefix() {
+  var block by mutableStateOf(NoteBlock(kind=BlockKind.DIAGNOSIS))
+  compose.setContent { NotesTheme { Column { ReferenceField(block,false,true) {values ->block=block.copy(values=block.values+values)} } } }
+  compose.onNodeWithTag("diagnosisField").performTextInput("Со слов пациента !киста головного мозга")
+  compose.waitUntil(15000) {compose.onAllNodesWithText("G93.0 · Церебральная киста").fetchSemanticsNodes().isNotEmpty()}
+  compose.onNodeWithText("G93.0 · Церебральная киста").performClick()
+  compose.runOnIdle {
+   assertEquals("Со слов пациента Церебральная киста [G93.0]",block.value("text"))
+   val links=ReferenceLinks.decode(block.value("references"),block.value("text"))
+   assertEquals(1,links.size);assertEquals("icd-nsi-3276",links.single().target)
+  }
+ }
 }
