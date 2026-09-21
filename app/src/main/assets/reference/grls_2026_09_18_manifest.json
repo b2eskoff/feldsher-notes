@@ -1,0 +1,30 @@
+{
+  "source_url": "https://grls.minzdrav.gov.ru/grls.aspx",
+  "snapshot": "2026-09-18",
+  "source_sha256": "f780c1e886ca9564e9fea91c56c1c8c2e53ec84a3d3b97c15685d2002f0fe0be",
+  "row_count": 29325,
+  "scanned_row_count": 142288,
+  "status_counts_in_full_archive": {
+    "Действующий": 19738,
+    "Изменённый": 103101,
+    "Исключённый": 4351,
+    "Истёкший": 5476,
+    "Выдано по правилам ЕАЭС": 9474,
+    "Действует, на подтверждении государственной регистрации": 77,
+    "Приостановлено применение": 35,
+    "Действует, в иностранных упаковках": 36
+  },
+  "imported_status_counts": {
+    "Действующий": 19738,
+    "Выдано по правилам ЕАЭС": 9474,
+    "Действует, на подтверждении государственной регистрации": 77,
+    "Действует, в иностранных упаковках": 36
+  },
+  "active_statuses": [
+    "Действующий",
+    "Выдано по правилам ЕАЭС",
+    "Действует, на подтверждении государственной регистрации",
+    "Действует, в иностранных упаковках"
+  ],
+  "registry_does_not_contain": "Verified indication-specific treatment doses, prescription Latin forms, clinical descriptions or equivalence of different dosage forms"
+}

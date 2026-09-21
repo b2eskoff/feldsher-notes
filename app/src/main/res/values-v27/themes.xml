@@ -1,0 +1,7 @@
+<resources><style name="Theme.FeldsherNotes" parent="android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:fontFamily">sans</item>
+    <item name="android:windowLightStatusBar">true</item>
+    <item name="android:windowLightNavigationBar">true</item>
+    <item name="android:colorAccent">#D9434D</item>
+    <item name="android:windowBackground">#F7F6F4</item>
+</style></resources>
