@@ -1,6 +1,7 @@
 package ru.ainur.feldshernotes.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -89,14 +90,14 @@ import kotlinx.coroutines.withContext
         catch(_: Exception) {error=true}
         finally {loaded=true}
     }
-    Column(Modifier.fillMaxSize().testTag("mkbScreen")) {
+    Column(Modifier.fillMaxSize().background(Paper).testTag("mkbScreen")) {
         Row(Modifier.fillMaxWidth().padding(horizontal=margin,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
             IconButton({back()}) {Icon(Icons.Outlined.ArrowBack,"Назад")}
             Text("МКБ",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.weight(1f))
             if(nodeId.isNotBlank()) TextButton({nodeId="";query="";searchReturn=false}) {Text("Классы")}
         }
         OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(horizontal=margin).testTag("mkbSearch"),
-            placeholder={Text("Код / диагноз / обычные слова")},singleLine=true,shape=RoundedCornerShape(24.dp),
+            placeholder={Text("Код / диагноз")},singleLine=true,shape=RoundedCornerShape(24.dp),
             leadingIcon={Icon(Icons.Outlined.Search,null)},trailingIcon={if(query.isNotEmpty()) IconButton({query=""}) {Icon(Icons.Outlined.Close,"Очистить поиск")}})
         Text(if(query.isBlank()) "Офлайн · МКБ-10 РФ · 15 038 рубрик" else "Поиск по всей МКБ · учитываю всю фразу",fontSize=11.sp,color=Muted,modifier=Modifier.padding(horizontal=margin,vertical=8.dp))
         if(query.isBlank() && ancestors.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=margin)) {
