@@ -85,10 +85,9 @@ import kotlinx.coroutines.withContext
                 }
                 MkbPage(item,children,parents,item?.let {IcdGuides.forCode(context,it.code)})
             }
-            current=result.item;rows=result.rows;ancestors=result.parents;guide=result.guide
+            current=result.item;rows=result.rows;ancestors=result.parents;guide=result.guide;loaded=true
         } catch(e: CancellationException) {throw e}
-        catch(_: Exception) {error=true}
-        finally {loaded=true}
+        catch(_: Exception) {error=true;loaded=true}
     }
     Column(Modifier.fillMaxSize().background(Paper).testTag("mkbScreen")) {
         Row(Modifier.fillMaxWidth().padding(horizontal=margin,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {

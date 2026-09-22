@@ -67,10 +67,32 @@ internal class IcdRepository(context: Context) {
             }.also { index=it }
         }
     }
+    /** Search real codes and explicit synonym families directly in bundled SQLite. */
+    private fun searchSqlCodes(prefixes: List<String>, limit: Int, terminalOnly: Boolean): List<ReferenceItem> = connect().use { db ->
+        val where = prefixes.joinToString(" OR ") { "(UPPER(icd.code)=? OR UPPER(icd.code) LIKE ?)" }
+        val args = prefixes.flatMap { listOf(it, if (it.length == 3) "$it.%" else "$it%") }
+        val leaf = if (terminalOnly) "AND NOT EXISTS (SELECT 1 FROM icd child WHERE child.parent_id=icd.id AND child.active=1)" else ""
+        rows(db, """SELECT icd.id,icd.code,icd.title FROM icd WHERE icd.active=1 AND ($where) $leaf
+            ORDER BY LENGTH(icd.code),icd.code,icd.id LIMIT ?""",
+            (args+limit.coerceIn(1,200).toString()).toTypedArray())
+    }
     /** Whole-phrase matching. Editor callers exclude every node with active children. */
     @Synchronized fun search(input: String, limit: Int = 120, terminalOnly: Boolean = false): List<ReferenceItem> {
-        val raw=input.trim().removePrefix("!")
+        val raw=input.trim().removePrefix("!").trim()
+        if (Regex("^[A-Za-zА-Яа-я][0-9]{1,2}(?:[.,][0-9]{0,2})?$").matches(raw)) {
+            val letters=mapOf('И' to 'I','А' to 'A','В' to 'B','С' to 'C','Е' to 'E','Н' to 'H','К' to 'K','М' to 'M','О' to 'O','Р' to 'P','Т' to 'T','Х' to 'X')
+            val first=raw.first().uppercaseChar()
+            val code="${letters[first] ?: first}${raw.drop(1).replace(',','.')}"
+            return searchSqlCodes(listOf(code),limit,terminalOnly)
+        }
         val q = IcdQuery.searchPhrase(raw)
+        val synonyms=listOf("гипертония","гипертоническая болезнь","гипертензия","гипертензивная болезнь","артериальная гипертензия","гб")
+        if ((q.length>=4 || q=="гб") && synonyms.any { it==q || it.startsWith(q) })
+            return searchSqlCodes(listOf("I10","I11","I12","I13","I15"),limit,terminalOnly)
+                .map { it.copy(searchHint="Выбери клинически подходящий вариант") }
+        if (q.length>=9 && "холецистопанкреатит".startsWith(q))
+            return searchSqlCodes(listOf("K81","K85","K86.1","K80.0","K80.1"),limit,terminalOnly)
+                .map { it.copy(searchHint="Возможный компонент сочетанной формулировки") }
         val combined=IcdQuery.combinedCodes(raw)
         val hasStage=IcdQuery.hasStage(raw)
         if (q.isBlank()) return emptyList()
@@ -83,11 +105,12 @@ internal class IcdRepository(context: Context) {
             val score=when {
                 codeQuery -> if(code==q) 1000 else if(code.startsWith(q)) 800 else return@mapNotNull null
                 combined.isNotEmpty() -> if(combined.any {IcdLanguage.inFamily(e.item.code,it)}) 200 else return@mapNotNull null
-                distance>1 -> return@mapNotNull null
-                distance==1 -> 100
                 e.title==q -> 900
                 e.aliases.contains(q) -> 700
                 e.title.startsWith(q) -> 500
+                e.title.contains(q) -> 450
+                distance>1 -> return@mapNotNull null
+                distance==1 -> 100
                 else -> 300
             }
             val common=if(e.item.code in setOf("I10","I11.9","G93.0","J18.9","E11.9","E10.9")) 30 else 0
