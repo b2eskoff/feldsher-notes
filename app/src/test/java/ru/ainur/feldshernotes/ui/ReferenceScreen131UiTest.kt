@@ -37,7 +37,7 @@ class ReferenceScreen131UiTest {
  }
  @Test fun wholeBrainCystQueryVisibleInReference() {
   start();compose.onNodeWithText("МКБ-10",substring=false).performClick()
-  compose.onNodeWithTag("referenceSearch").performTextInput("киста головного мозга")
+  compose.onNodeWithTag("mkbSearch").performTextInput("киста головного мозга")
   compose.waitUntil(15000) {compose.onAllNodesWithText("Церебральная киста",substring=false).fetchSemanticsNodes().isNotEmpty()}
   shot("reference-brain-cyst")
  }
