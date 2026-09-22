@@ -26,9 +26,16 @@ class Mkb140Test {
   val cases=mapOf("воспаление легких" to "J18.9","камни в почках" to "N20.0","мерцательная аритмия" to "I48","отек квинке" to "T78.3","сгм" to "S06.0","тэла" to "I26","белая горячка" to "F10.4","боль в пояснице" to "M54.5","церебральную кисту" to "G93.0","низкий сахар" to "E16.2","воспаление желчного пузыря" to "K81","онмк неуточненное" to "I64")
   for((query,prefix) in cases) {
    val hits=repo.search(query,terminalOnly=true)
-   assertTrue("$query => ${hits.map {it.code}}",hits.any {it.code==prefix || it.code.startsWith("$prefix.")})
+   assertTrue("$query => ${hits.map {it.code}}",hits.any {IcdLanguage.inFamily(it.code,prefix)})
    assertTrue(query,hits.none {repo.hasChildren(it.id)})
   }
+ }
+ @Test fun fifthCharacterCodesInheritAliasesWithoutLeakingToOtherDiseases() {
+  assertEquals(setOf("S06.00","S06.01"),repo.search("сгм",terminalOnly=true).map {it.code}.toSet())
+  assertTrue(IcdLanguage.inFamily("S06.01","S06.0"))
+  assertFalse(IcdLanguage.inFamily("S06.10","S06.0"))
+  assertFalse(IcdLanguage.inFamily("I110","I11"))
+  assertFalse(IcdLanguage.inFamily("T40.5","T40.2"))
  }
  @Test fun typoIsLabeledAndUnknownContextIsNotDiscarded() {
   val hits=repo.search("пневмания",terminalOnly=true)

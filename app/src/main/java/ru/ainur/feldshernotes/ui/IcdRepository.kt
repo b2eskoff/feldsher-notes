@@ -82,7 +82,7 @@ internal class IcdRepository(context: Context) {
             val distance=if(codeQuery) 0 else IcdLanguage.distance(words,e.words)
             val score=when {
                 codeQuery -> if(code==q) 1000 else if(code.startsWith(q)) 800 else return@mapNotNull null
-                combined.isNotEmpty() -> if(combined.any {e.item.code==it || e.item.code.startsWith("$it.")}) 200 else return@mapNotNull null
+                combined.isNotEmpty() -> if(combined.any {IcdLanguage.inFamily(e.item.code,it)}) 200 else return@mapNotNull null
                 distance>1 -> return@mapNotNull null
                 distance==1 -> 100
                 e.title==q -> 900

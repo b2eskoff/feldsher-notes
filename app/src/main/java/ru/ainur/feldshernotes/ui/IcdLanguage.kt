@@ -124,7 +124,9 @@ internal object IcdLanguage {
         "T78.2" to "анафилаксия неуточненная|анафилактический шок неуточненный",
         "T78.3" to "отек квинке|ангиоотек|ангионевротический отек"
     )
-    fun aliases(code: String): String = (listOf(baseAliases(code))+extra.filter { (prefix,_) ->code==prefix || code.startsWith("$prefix.") }.map {it.second}).filter(String::isNotBlank).joinToString("|")
+    fun inFamily(code: String,prefix: String): Boolean = code==prefix ||
+        (code.startsWith(if('.' in prefix) prefix else "$prefix.") && code.removePrefix(if('.' in prefix) prefix else "$prefix.").all(Char::isDigit))
+    fun aliases(code: String): String = (listOf(baseAliases(code))+extra.filter { (prefix,_) ->inFamily(code,prefix) }.map {it.second}).filter(String::isNotBlank).joinToString("|")
     private fun baseAliases(code: String): String = when {
         code=="G93.0" -> "киста головного мозга церебральная киста киста гм"
         code=="Q04.6" -> "врожденная киста головного мозга врожденная киста гм"

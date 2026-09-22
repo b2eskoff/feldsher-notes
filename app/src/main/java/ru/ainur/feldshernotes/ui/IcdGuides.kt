@@ -16,7 +16,7 @@ internal object IcdGuides {
         }.also {cache=it}
     }
     fun forCode(context: Context,code: String): IcdGuide? = all(context).mapNotNull {g ->
-        val specificity=g.codes.filter {code==it || code.startsWith("$it.")}.maxOfOrNull(String::length) ?: return@mapNotNull null
+        val specificity=g.codes.filter {IcdLanguage.inFamily(code,it)}.maxOfOrNull(String::length) ?: return@mapNotNull null
         g to specificity
     }.maxByOrNull {it.second}?.first
 }
