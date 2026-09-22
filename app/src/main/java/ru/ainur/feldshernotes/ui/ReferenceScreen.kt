@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
     if(initialId.startsWith("icd-nsi-")) {MkbScreen(compact,onBack,initialId);return}
     if(tab=="МКБ-10") {MkbScreen(compact,{tab="Препараты"});return}
     var openedId by rememberSaveable(initialId) { mutableStateOf(initialId) }
+    if(openedId.startsWith("icd-nsi-")) {MkbScreen(compact,{openedId=""},openedId);return}
     var history by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var favorites by remember { mutableStateOf(prefs.getStringSet("ids",emptySet()).orEmpty().toSet()) }
     var recent by remember { mutableStateOf(prefs.getString("recent","").orEmpty().split('|').filter(String::isNotBlank)) }

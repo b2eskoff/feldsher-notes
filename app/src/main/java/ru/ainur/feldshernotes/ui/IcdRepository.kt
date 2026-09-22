@@ -72,6 +72,7 @@ internal class IcdRepository(context: Context) {
         val raw=input.trim().removePrefix("!")
         val q = IcdQuery.searchPhrase(raw)
         val combined=IcdQuery.combinedCodes(raw)
+        val hasStage=IcdQuery.hasStage(raw)
         if (q.isBlank()) return emptyList()
         val codeQuery=Regex("^[a-z][0-9].*").matches(q)
         val words=IcdLanguage.words(q)
@@ -92,7 +93,7 @@ internal class IcdRepository(context: Context) {
             val common=if(e.item.code in setOf("I10","I11.9","G93.0","J18.9","E11.9","E10.9")) 30 else 0
             val hint=when {
                 combined.isNotEmpty() -> "Сочетанная формулировка: это один из компонентов, не полный диагноз"
-                IcdQuery.hasStage(raw) -> "Стадия/степень не определяет код МКБ — уточни поражение органов"
+                hasStage -> "Стадия/степень не определяет код МКБ — уточни поражение органов"
                 distance==1 -> "Похожее написание — проверь диагноз и уточнения"
                 !codeQuery && !IcdLanguage.matches(words,IcdLanguage.words(e.item.title)) -> "Найдено по синониму — выбери нужное уточнение"
                 else -> ""

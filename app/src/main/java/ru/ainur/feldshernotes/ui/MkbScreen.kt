@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
     var savedQuery by rememberSaveable {mutableStateOf("")}
     var searchOrigin by rememberSaveable {mutableStateOf("")}
     var searchReturn by rememberSaveable {mutableStateOf(false)}
+    var searchEntryId by rememberSaveable {mutableStateOf("")}
     var current by remember {mutableStateOf<ReferenceItem?>(null)}
     var rows by remember {mutableStateOf(emptyList<ReferenceItem>())}
     var ancestors by remember {mutableStateOf(emptyList<ReferenceItem>())}
@@ -51,7 +52,8 @@ import kotlinx.coroutines.withContext
     fun back() {
         when {
             query.isNotBlank() -> query=""
-            searchReturn -> {nodeId=searchOrigin;query=savedQuery;searchReturn=false}
+            searchReturn && nodeId==searchEntryId -> {nodeId=searchOrigin;query=savedQuery;searchReturn=false}
+            nodeId==initialId && initialId.isNotBlank() -> onBack()
             ancestors.isNotEmpty() -> nodeId=ancestors.last().id
             nodeId.isNotBlank() && initialId.isBlank() -> nodeId=""
             else -> onBack()
@@ -59,7 +61,7 @@ import kotlinx.coroutines.withContext
     }
     BackHandler {back()}
     fun open(item: ReferenceItem) {
-        if(query.isNotBlank()) {savedQuery=query;searchOrigin=nodeId;searchReturn=true;query=""}
+        if(query.isNotBlank()) {savedQuery=query;searchOrigin=nodeId;searchEntryId=item.id;searchReturn=true;query=""}
         nodeId=item.id
     }
     LaunchedEffect(query,nodeId) {limit=40;list.scrollToItem(0)}
