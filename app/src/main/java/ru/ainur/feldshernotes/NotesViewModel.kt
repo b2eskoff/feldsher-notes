@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 import ru.ainur.feldshernotes.data.*
 import java.time.LocalDate
 
-enum class Screen { JOURNAL,DETAIL,EDITOR,SEARCH,MEMORY,MORE,PROFILE,REFERENCE }
+enum class Screen { JOURNAL,DETAIL,EDITOR,SEARCH,MEMORY,MORE,PROFILE,REFERENCE,MKB }
 data class NotesState(
     val ready: Boolean = false,val loadFailed: Boolean = false,val selectedDate: String = LocalDate.now().toString(),
     val calls: List<CallRecord> = emptyList(),val screen: Screen = Screen.JOURNAL,val openedId: String? = null,
@@ -114,7 +114,7 @@ class NotesViewModel(private val repository: NotesRepository,private val saved: 
             navigate(state.value.detailOrigin)
         }
     }
-    fun openSection(screen: Screen) { require(screen in listOf(Screen.JOURNAL,Screen.MEMORY,Screen.MORE,Screen.PROFILE,Screen.REFERENCE));navigate(screen) }
+    fun openSection(screen: Screen) { require(screen in listOf(Screen.JOURNAL,Screen.MEMORY,Screen.MORE,Screen.PROFILE,Screen.REFERENCE,Screen.MKB));navigate(screen) }
     suspend fun awaitPendingWrites() { val done=kotlinx.coroutines.CompletableDeferred<Unit>();enqueue { done.complete(Unit) };done.await() }
     suspend fun reloadAfterRestore() { val draft=repository.draft();val date=repository.selectedDate() ?: state.value.selectedDate
         saved["selectedDate"]=date;mutable.update { it.copy(draft=draft?.first,draftIsNew=draft?.second ?: true,selectedDate=date) }
@@ -127,7 +127,7 @@ class NotesViewModel(private val repository: NotesRepository,private val saved: 
         when(state.value.screen) {
             Screen.EDITOR -> if (state.value.draft?.hasContent == false) discardDraft() else navigate(Screen.JOURNAL)
             Screen.DETAIL -> navigate(state.value.detailOrigin)
-            Screen.SEARCH,Screen.MEMORY,Screen.MORE,Screen.PROFILE,Screen.REFERENCE -> navigate(Screen.JOURNAL)
+            Screen.SEARCH,Screen.MEMORY,Screen.MORE,Screen.PROFILE,Screen.REFERENCE,Screen.MKB -> navigate(Screen.JOURNAL)
             Screen.JOURNAL -> Unit
         }
     }

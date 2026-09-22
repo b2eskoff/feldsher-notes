@@ -71,7 +71,8 @@ val SoftGreen = Color(0xFF497567)
         DropdownMenu(expanded && enabled,{ expanded = false },modifier = Modifier.widthIn(max = 260.dp),
             shape = RoundedCornerShape(20.dp),containerColor = Color.White) {
             listOf(Triple(Screen.JOURNAL,"Журнал",Icons.Outlined.EditNote),
-                Triple(Screen.REFERENCE,"Справочник",Icons.Outlined.MenuBook),
+                Triple(Screen.MKB,"МКБ",Icons.Outlined.AccountTree),
+                Triple(Screen.REFERENCE,"Препараты",Icons.Outlined.MenuBook),
                 Triple(Screen.MEMORY,"Память",Icons.Outlined.Mic),
                 Triple(Screen.MORE,"Резервные копии",Icons.Outlined.Backup)).forEach { (screen,label,icon) ->
                 DropdownMenuItem(text = { Text(label) },onClick = { expanded = false;onSection(screen) },

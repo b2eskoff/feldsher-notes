@@ -53,7 +53,10 @@ internal fun referenceAnnotation(text: String,links: List<ReferenceLink>, color:
 }
 @Composable internal fun ReferenceOverlay(id: String,compact: Boolean,onDismiss: ()->Unit) {
     Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
-        Box(Modifier.fillMaxSize().background(Paper).safeDrawingPadding()) {ReferenceScreen(compact,onDismiss,initialId=id)}
+        Box(Modifier.fillMaxSize().background(Paper).safeDrawingPadding()) {
+            if(id.startsWith("icd-nsi-")) MkbScreen(compact,onDismiss,initialId=id)
+            else ReferenceScreen(compact,onDismiss,initialId=id)
+        }
     }
 }
 private data class Suggestion(val item: ReferenceItem,val start: Int,val end: Int,val original: String)
@@ -122,6 +125,7 @@ private data class Suggestion(val item: ReferenceItem,val start: Int,val end: In
                     Row(Modifier.fillMaxWidth().padding(horizontal=9.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically) {
                         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                             Text(if(s.item.kind==ReferenceKind.ICD) "${s.item.code} · ${s.item.title}" else s.item.title,fontWeight=FontWeight.Medium,fontSize=14.sp)
+                            if(s.item.searchHint.isNotBlank()) Text(s.item.searchHint,color=Muted,fontSize=11.sp)
                             if(s.item.kind==ReferenceKind.MEDICINE) Text(listOf(s.item.latin,s.item.tradeNames.take(3).joinToString(" · ")).filter(String::isNotBlank).joinToString("\n"),color=Muted,fontSize=11.sp)
                         }
                         Icon(Icons.Outlined.Add,null,tint=Accent,modifier=Modifier.size(19.dp))

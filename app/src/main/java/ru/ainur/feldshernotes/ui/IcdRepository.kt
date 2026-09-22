@@ -69,23 +69,35 @@ internal class IcdRepository(context: Context) {
     }
     /** Whole-phrase matching. Editor callers exclude every node with active children. */
     @Synchronized fun search(input: String, limit: Int = 120, terminalOnly: Boolean = false): List<ReferenceItem> {
-        val q = IcdQuery.normalize(input.trim().removePrefix("!"))
+        val raw=input.trim().removePrefix("!")
+        val q = IcdQuery.searchPhrase(raw)
+        val combined=IcdQuery.combinedCodes(raw)
         if (q.isBlank()) return emptyList()
         val codeQuery=Regex("^[a-z][0-9].*").matches(q)
         val words=IcdLanguage.words(q)
         if(!codeQuery && words.isEmpty()) return emptyList()
         return entries().asSequence().filter { !terminalOnly || it.leaf }.mapNotNull { e ->
             val code=ReferenceSearch.normalize(e.item.code)
+            val distance=if(codeQuery) 0 else IcdLanguage.distance(words,e.words)
             val score=when {
                 codeQuery -> if(code==q) 1000 else if(code.startsWith(q)) 800 else return@mapNotNull null
-                !IcdLanguage.matches(words,e.words) -> return@mapNotNull null
+                combined.isNotEmpty() -> if(combined.any {e.item.code==it || e.item.code.startsWith("$it.")}) 200 else return@mapNotNull null
+                distance>1 -> return@mapNotNull null
+                distance==1 -> 100
                 e.title==q -> 900
                 e.aliases.contains(q) -> 700
                 e.title.startsWith(q) -> 500
                 else -> 300
             }
             val common=if(e.item.code in setOf("I10","I11.9","G93.0","J18.9","E11.9","E10.9")) 30 else 0
-            e to (score+common+if(e.leaf) 10 else 0)
+            val hint=when {
+                combined.isNotEmpty() -> "Сочетанная формулировка: это один из компонентов, не полный диагноз"
+                IcdQuery.hasStage(raw) -> "Стадия/степень не определяет код МКБ — уточни поражение органов"
+                distance==1 -> "Похожее написание — проверь диагноз и уточнения"
+                !codeQuery && !IcdLanguage.matches(words,IcdLanguage.words(e.item.title)) -> "Найдено по синониму — выбери нужное уточнение"
+                else -> ""
+            }
+            e.copy(item=e.item.copy(searchHint=hint)) to (score+common+if(e.leaf) 10 else 0)
         }.sortedWith(compareByDescending<Pair<Entry,Int>> {it.second}.thenBy {it.first.item.title.length}.thenBy {it.first.item.code})
             .take(limit.coerceIn(1,200)).map {it.first.item}.toList()
     }
@@ -94,7 +106,7 @@ internal class IcdRepository(context: Context) {
         rows(db, "SELECT id,code,title FROM icd WHERE parent_id IS NULL AND active=1 ORDER BY id")
     }
     @Synchronized fun children(parent: Long): List<ReferenceItem> = connect().use { db ->
-        rows(db, "SELECT id,code,title FROM icd WHERE parent_id=? AND active=1 ORDER BY id LIMIT 300", arrayOf(parent.toString()))
+        rows(db, "SELECT id,code,title FROM icd WHERE parent_id=? AND active=1 ORDER BY code,id LIMIT 300", arrayOf(parent.toString()))
     }
     @Synchronized fun item(id: String): ReferenceItem? {
         val n = id.removePrefix("icd-nsi-").toLongOrNull() ?: return null

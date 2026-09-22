@@ -55,6 +55,7 @@ import java.time.LocalDate
                         Screen.MEMORY -> MemoryScreen(compact,model::back,model::openSection)
                         Screen.PROFILE -> ProfileScreen(compact,model::back)
                         Screen.REFERENCE -> ReferenceScreen(compact,model::back)
+                        Screen.MKB -> MkbScreen(compact,model::back)
                         Screen.MORE -> MoreScreen(compact,model)
                         Screen.JOURNAL -> JournalScreen(state,compact,model)
                         Screen.DETAIL -> DetailScreen(state,compact,model)

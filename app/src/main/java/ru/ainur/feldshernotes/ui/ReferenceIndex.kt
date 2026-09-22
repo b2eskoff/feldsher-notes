@@ -28,7 +28,8 @@ internal data class ReferenceItem(
     val checkedOn: String = "",
     val referenceScope: String = "",
     val medicineForms: List<MedicineForm> = emptyList(),
-    val clinical: Boolean = false
+    val clinical: Boolean = false,
+    val searchHint: String = ""
 )
 internal data class ReferenceHit(val item: ReferenceItem, val score: Int, val related: Boolean)
 
