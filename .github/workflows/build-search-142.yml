@@ -1,0 +1,110 @@
+name: Build ICD search fix 1.4.2
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-search-142.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Apply safe source fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('app/src/main/java/ru/ainur/feldshernotes/ui')
+          p=base/'IcdRepository.kt'; s=p.read_text()
+          anchor='    /** Whole-phrase matching. Editor callers exclude every node with active children. */'
+          assert anchor in s and 'private fun searchSqlCodes(' not in s
+          sql='''    /** Search real codes and explicit synonym families directly in bundled SQLite. */
+              private fun searchSqlCodes(prefixes: List<String>, limit: Int, terminalOnly: Boolean): List<ReferenceItem> = connect().use { db ->
+                  val where = prefixes.joinToString(" OR ") { "(UPPER(icd.code)=? OR UPPER(icd.code) LIKE ?)" }
+                  val args = prefixes.flatMap { listOf(it, if (it.length == 3) "$it.%" else "$it%") }
+                  val leaf = if (terminalOnly) "AND NOT EXISTS (SELECT 1 FROM icd child WHERE child.parent_id=icd.id AND child.active=1)" else ""
+                  rows(db, """SELECT icd.id,icd.code,icd.title FROM icd WHERE icd.active=1 AND ($where) $leaf
+                      ORDER BY LENGTH(icd.code),icd.code,icd.id LIMIT ?""",
+                      (args+limit.coerceIn(1,200).toString()).toTypedArray())
+              }
+          '''
+          s=s.replace(anchor,sql+anchor,1)
+          start='''        val raw=input.trim().removePrefix("!")
+                  val q = IcdQuery.searchPhrase(raw)'''
+          new='''        val raw=input.trim().removePrefix("!").trim()
+                  if (Regex("^[A-Za-zА-Яа-я][0-9]{1,2}(?:[.,][0-9]{0,2})?$").matches(raw)) {
+                      val letters=mapOf('И' to 'I','А' to 'A','В' to 'B','С' to 'C','Е' to 'E','Н' to 'H','К' to 'K','М' to 'M','О' to 'O','Р' to 'P','Т' to 'T','Х' to 'X')
+                      val first=raw.first().uppercaseChar()
+                      val code="${letters[first] ?: first}${raw.drop(1).replace(',','.')}"
+                      return searchSqlCodes(listOf(code),limit,terminalOnly)
+                  }
+                  val q = IcdQuery.searchPhrase(raw)
+                  val synonyms=listOf("гипертония","гипертоническая болезнь","гипертензия","гипертензивная болезнь","артериальная гипертензия","гб")
+                  if ((q.length>=4 || q=="гб") && synonyms.any { it==q || it.startsWith(q) })
+                      return searchSqlCodes(listOf("I10","I11","I12","I13","I15"),limit,terminalOnly)
+                          .map { it.copy(searchHint="Выбери клинически подходящий вариант") }
+                  if (q.length>=9 && "холецистопанкреатит".startsWith(q))
+                      return searchSqlCodes(listOf("K81","K85","K86.1","K80.0","K80.1"),limit,terminalOnly)
+                          .map { it.copy(searchHint="Возможный компонент сочетанной формулировки") }'''
+          assert start in s
+          s=s.replace(start,new,1)
+          old='''                distance>1 -> return@mapNotNull null
+                          distance==1 -> 100
+                          e.title==q -> 900
+                          e.aliases.contains(q) -> 700
+                          e.title.startsWith(q) -> 500'''
+          repl='''                e.title==q -> 900
+                          e.aliases.contains(q) -> 700
+                          e.title.startsWith(q) -> 500
+                          e.title.contains(q) -> 450
+                          distance>1 -> return@mapNotNull null
+                          distance==1 -> 100'''
+          assert old in s
+          p.write_text(s.replace(old,repl,1))
+          p=base/'MkbScreen.kt'; s=p.read_text()
+          old='''            current=result.item;rows=result.rows;ancestors=result.parents;guide=result.guide
+                  } catch(e: CancellationException) {throw e}
+                  catch(_: Exception) {error=true}
+                  finally {loaded=true}'''
+          new='''            current=result.item;rows=result.rows;ancestors=result.parents;guide=result.guide;loaded=true
+                  } catch(e: CancellationException) {throw e}
+                  catch(_: Exception) {error=true;loaded=true}'''
+          assert old in s
+          p.write_text(s.replace(old,new,1))
+          p=Path('app/build.gradle.kts'); s=p.read_text()
+          assert 'versionCode = 15; versionName = "1.4.1"' in s
+          p.write_text(s.replace('versionCode = 15; versionName = "1.4.1"','versionCode = 16; versionName = "1.4.2"',1))
+          PY
+      - name: Store fixed source in GitHub
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts app/src/main/java/ru/ainur/feldshernotes/ui/IcdRepository.kt app/src/main/java/ru/ainur/feldshernotes/ui/MkbScreen.kt
+          git commit -m 'Repair code and synonym ICD search in 1.4.2'
+          git push origin HEAD:main
+      - name: Build release APK
+        run: bash ./gradlew :app:assembleRelease --no-daemon --console=plain
+      - name: Test ICD search and app
+        continue-on-error: true
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
+      - name: Stage private local-signing utility (no key uploaded)
+        if: always()
+        run: |
+          mkdir -p signing-tool
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" signing-tool/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: feldsher-1.4.2-unsigned-and-signing-tool
+          path: |
+            app/build/outputs/apk/release/*.apk
+            signing-tool/apksigner.jar
+          if-no-files-found: error
