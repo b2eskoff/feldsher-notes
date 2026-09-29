@@ -21,8 +21,12 @@ jobs:
         run: bash ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
       - name: Build unsigned release APK
         run: bash ./gradlew :app:assembleRelease --no-daemon --console=plain
+      - name: Build installable test APK
+        run: bash ./gradlew :app:assembleDebug --no-daemon --console=plain
       - uses: actions/upload-artifact@v4
         with:
-          name: feldsher-notes-1.4.3-unsigned
-          path: app/build/outputs/apk/release/*-unsigned.apk
+          name: feldsher-notes-1.4.3-apks
+          path: |
+            app/build/outputs/apk/release/*-unsigned.apk
+            app/build/outputs/apk/debug/*-debug.apk
           if-no-files-found: error
