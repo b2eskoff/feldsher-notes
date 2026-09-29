@@ -93,7 +93,7 @@ internal class IcdRepository(context: Context) {
                 .map { it.copy(searchHint=if(IcdQuery.hasStage(raw)) "Стадия/степень не определяет код МКБ — уточни поражение органов" else "Выбери клинически подходящий вариант") }
         if (q.length>=9 && "холецистопанкреатит".startsWith(q))
             return searchSqlCodes(listOf("K81","K85","K86.1","K80.0","K80.1"),limit,terminalOnly)
-                .map { it.copy(searchHint="Возможный компонент сочетанной формулировки") }
+                .map { it.copy(searchHint="Сочетанная формулировка: это один из компонентов, не полный диагноз") }
         val combined=IcdQuery.combinedCodes(raw)
         val hasStage=IcdQuery.hasStage(raw)
         if (q.isBlank()) return emptyList()
