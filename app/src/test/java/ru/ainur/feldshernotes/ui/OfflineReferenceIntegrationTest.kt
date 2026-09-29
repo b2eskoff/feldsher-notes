@@ -30,7 +30,8 @@ class OfflineReferenceIntegrationTest {
     }
     @Test fun salineCanBeFoundByColloquialPartialAndLatinNames() {
         val repo=MedicineRepository(context)
-        listOf("физраствор","натрий хл","Natrii chloridi").forEach { q ->assertTrue(q,repo.search(q).any {it.title=="Натрия хлорид"}) }
+        listOf("физраствор","натрий хл","Natrii chloridi","натрия хлорид","хлорид натрия","натрий хлорида")
+            .forEach { q ->assertTrue(q,repo.search(q).any {it.title=="Натрия хлорид"}) }
     }
     @Test fun hypertensionOffersPreciseCodesAndCyrillicIWorks() {
         val repo=IcdRepository(context)
@@ -39,6 +40,9 @@ class OfflineReferenceIntegrationTest {
         assertTrue(results.any {it.code=="I11.9"})
         assertTrue(results.any {it.code=="I11.0"})
         assertEquals("I11.9",repo.search("и11.9").first().code)
+        val editor=repo.search("гипертоническая болезнь 2 стадии",terminalOnly=true)
+        assertTrue(editor.any {it.code=="I11.9"})
+        assertTrue(editor.all {it.searchHint.contains("Стадия") && !repo.hasChildren(it.id)})
     }
     @Test fun noClinicalAdviceIsInventedForUnreviewedDrug() {
         val repo=MedicineRepository(context)

@@ -15,6 +15,7 @@ internal class IcdRepository(context: Context) {
     companion object {
         private val installLock=Any()
         @Volatile private var index: List<Entry>?=null
+        private val curatedByCode by lazy { ReferenceCatalog.items.filter { it.kind == ReferenceKind.ICD }.associateBy { it.code.uppercase() } }
     }
     private val app = context.applicationContext
     private val databaseFile = File(app.noBackupFilesDir, "reference/icd10_ru_2_27.db")
@@ -47,7 +48,7 @@ internal class IcdRepository(context: Context) {
         val id = c.getInt(0)
         val code = c.getString(1)
         val name = c.getString(2)
-        val curated = ReferenceCatalog.items.firstOrNull { it.kind == ReferenceKind.ICD && it.code.equals(code, true) }
+        val curated = curatedByCode[code.uppercase()]
         return if (curated != null) curated.copy(id = "icd-nsi-$id", title = name, code = code) else ReferenceItem(
             id = "icd-nsi-$id", kind = ReferenceKind.ICD, title = name, code = code,
             description = "",
@@ -89,7 +90,7 @@ internal class IcdRepository(context: Context) {
         val synonyms=listOf("гипертония","гипертоническая болезнь","гипертензия","гипертензивная болезнь","артериальная гипертензия","гб")
         if ((q.length>=4 || q=="гб") && synonyms.any { it==q || it.startsWith(q) })
             return searchSqlCodes(listOf("I10","I11","I12","I13","I15"),limit,terminalOnly)
-                .map { it.copy(searchHint="Выбери клинически подходящий вариант") }
+                .map { it.copy(searchHint=if(IcdQuery.hasStage(raw)) "Стадия/степень не определяет код МКБ — уточни поражение органов" else "Выбери клинически подходящий вариант") }
         if (q.length>=9 && "холецистопанкреатит".startsWith(q))
             return searchSqlCodes(listOf("K81","K85","K86.1","K80.0","K80.1"),limit,terminalOnly)
                 .map { it.copy(searchHint="Возможный компонент сочетанной формулировки") }
@@ -99,9 +100,12 @@ internal class IcdRepository(context: Context) {
         val codeQuery=Regex("^[a-z][0-9].*").matches(q)
         val words=IcdLanguage.words(q)
         if(!codeQuery && words.isEmpty()) return emptyList()
-        return entries().asSequence().filter { !terminalOnly || it.leaf }.mapNotNull { e ->
+        val all=entries().asSequence().filter { !terminalOnly || it.leaf }.toList()
+        // Prefer complete word matches. Fuzzy matching is a fallback; otherwise a
+        // typo in a short query can bury the exact diagnosis among 15,000 rows.
+        fun ranked(allowTypo: Boolean) = all.asSequence().mapNotNull { e ->
             val code=ReferenceSearch.normalize(e.item.code)
-            val distance=if(codeQuery) 0 else IcdLanguage.distance(words,e.words)
+            val distance=if(codeQuery) 0 else IcdLanguage.distance(words,e.words,allowTypo)
             val score=when {
                 codeQuery -> if(code==q) 1000 else if(code.startsWith(q)) 800 else return@mapNotNull null
                 combined.isNotEmpty() -> if(combined.any {IcdLanguage.inFamily(e.item.code,it)}) 200 else return@mapNotNull null
@@ -124,6 +128,8 @@ internal class IcdRepository(context: Context) {
             e.copy(item=e.item.copy(searchHint=hint)) to (score+common+if(e.leaf) 10 else 0)
         }.sortedWith(compareByDescending<Pair<Entry,Int>> {it.second}.thenBy {it.first.item.title.length}.thenBy {it.first.item.code})
             .take(limit.coerceIn(1,200)).map {it.first.item}.toList()
+        val exact=ranked(false)
+        return if(exact.isNotEmpty() || codeQuery) exact else ranked(true)
     }
 
     @Synchronized fun chapters(): List<ReferenceItem> = connect().use { db ->

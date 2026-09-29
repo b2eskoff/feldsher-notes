@@ -55,7 +55,9 @@ internal class MedicineRepository(context: Context) {
         val q = ReferenceSearch.normalize(raw)
         if(q.length < 2) return emptyList()
         val mapped = ClinicalGuides.aliasInn(q) ?: VerifiedLatin.russianInnForSearch(raw)
-        val terms = q.split(' ').filter(String::isNotBlank)
+        // The register stores nominative names ("Натрия хлорид"), while a user may
+        // type "натрий хлорида". Match each word by its stable prefix, in any order.
+        val terms = q.split(' ').filter(String::isNotBlank).map(::searchStem)
         val where = terms.joinToString(" AND ") { "(title_search LIKE ? OR search LIKE ?)" }
         val args = terms.flatMap { listOf("%$it%", "%$it%") }.toMutableList()
         val extra = if(mapped != null) " OR title_search=?" else ""
@@ -71,6 +73,12 @@ internal class MedicineRepository(context: Context) {
                 b==q || (!hasSingle && '+' !in brand && b.startsWith(q))
             }
         }.take(limit.coerceIn(1,120))
+    }
+    private fun searchStem(word: String): String {
+        if (word.length < 5 || word.any(Char::isDigit)) return word
+        val ending = listOf("иями", "ями", "ого", "ому", "ыми", "ими", "ией", "иях", "иям", "ую", "юю", "ий", "ый", "ая", "яя", "ое", "ее", "ые", "ие", "ой", "ей", "ам", "ах", "ом", "ем", "ия", "ию", "ью", "ов", "ев", "ы", "и", "а", "я", "у", "ю", "е")
+            .firstOrNull { word.endsWith(it) && word.length - it.length >= 4 }
+        return if (ending == null) word else word.dropLast(ending.length)
     }
     @Synchronized fun item(id: String): ReferenceItem? = connect().use { db ->
         val legacy = id.removePrefix("drug-grls-").toLongOrNull()

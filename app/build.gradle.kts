@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "ru.ainur.feldshernotes"
         minSdk = 26; targetSdk = 36
-        versionCode = 16; versionName = "1.4.2"
+        versionCode = 17; versionName = "1.4.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     testBuildType = "release"

@@ -19,11 +19,11 @@ internal object IcdLanguage {
     }
     fun matches(query: List<String>, document: List<String>): Boolean = distance(query,document)==0
     /** All meaningful words survive. At most ONE typo across the entire phrase. */
-    fun distance(query: List<String>, document: List<String>): Int {
+    fun distance(query: List<String>, document: List<String>, allowTypo: Boolean = true): Int {
         var errors=0
         for(q in query) {
             if(alternatives(q).any { part -> document.any { it.startsWith(part) } }) continue
-            if(q.length>=5 && document.any { it.length>=5 && oneEdit(q,it) }) errors++ else return 99
+            if(allowTypo && q.length>=5 && document.any { it.length>=5 && oneEdit(q,it) }) errors++ else return 99
             if(errors>1) return 99
         }
         return errors

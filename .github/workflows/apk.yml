@@ -17,10 +17,12 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Test search and existing app behavior
+        run: bash ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
       - name: Build unsigned release APK
         run: bash ./gradlew :app:assembleRelease --no-daemon --console=plain
       - uses: actions/upload-artifact@v4
         with:
-          name: feldsher-notes-1.4.1-unsigned
+          name: feldsher-notes-1.4.3-unsigned
           path: app/build/outputs/apk/release/*-unsigned.apk
           if-no-files-found: error
